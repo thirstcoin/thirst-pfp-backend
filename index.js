@@ -1,77 +1,147 @@
 const express = require('express');
 const cors = require('cors');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 app.use(cors());
 app.use(express.json());
 
-// Gemini SDK
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+// -----------------------------
+// Thirst PFP style prompt
+// -----------------------------
+const STYLE_PROMPT = `
+You are generating a Thirsty Chad profile picture for the $THIRST universe.
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+All Thirst PFPs must follow this same visual template:
+- Bust-up portrait, centered in frame
+- Large rounded cartoon head, shoulders visible
+- Thick outer linework with thinner interior lines
+- Neon comic style with saturated colors (cyan, magenta, orange, purple)
+- Signature heart-shaped sunglasses and a chunky gold chain with a round medallion (keep these by default unless the concept clearly replaces them)
+- Clean background with a soft neon glow ring behind the character, not a detailed environment
+- Lighting from the top-left, soft shadow under the chin, subtle highlights on the glasses and chain
+- Expression is confident, playful, slightly degen
 
-// ---------------------------
-// HEALTH CHECK
-// ---------------------------
+All PFPs must keep the same proportions, pose, crop, and art style. Only the outfit, hairstyle, accessories, colors and theme should change so that every image still looks like part of the same Thirsty Chad Series 1 collection.
+`;
+
+// Build the full prompt
+function buildPrompt(concept) {
+  return (
+    STYLE_PROMPT +
+    '\n\nNow transform this base Chad into the following concept, while keeping the same pose, proportions, crop, and art style:\n\n' +
+    concept
+  );
+}
+
+// Call Gemini image API using fetch
+async function generateImageFromGemini(prompt) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not set on the server');
+  }
+
+  const url =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' +
+    GEMINI_API_KEY;
+
+  const body = {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      // ask for an image as the response
+      response_mime_type: 'image/png',
+    },
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error('Gemini HTTP ' + resp.status + ': ' + errText);
+  }
+
+  const data = await resp.json();
+  const candidates = data.candidates || [];
+  if (!candidates.length) {
+    throw new Error('No candidates returned from Gemini');
+  }
+
+  const parts = (candidates[0].content && candidates[0].content.parts) || [];
+  const imagePart = parts.find(
+    (p) => p.inlineData || p.inline_data
+  );
+
+  if (!imagePart) {
+    throw new Error('No inline image data in Gemini response');
+  }
+
+  const inline = imagePart.inlineData || imagePart.inline_data;
+  const base64 = inline.data;
+  const mime = inline.mimeType || inline.mime_type || 'image/png';
+
+  // data URL we can use directly in <img src="...">
+  return `data:${mime};base64,${base64}`;
+}
+
+// -----------------------------
+// Routes
+// -----------------------------
+
+// health check
 app.get('/health', (req, res) => {
-  res.json({ ok: true, service: "thirst-pfp-backend" });
+  res.json({ ok: true, service: 'thirst-pfp-backend' });
 });
 
-// ---------------------------
-// PFP GENERATION ENDPOINT
-// ---------------------------
+// PFP endpoint
 app.post('/pfp', async (req, res) => {
   try {
     const { concept } = req.body || {};
 
-    if (!concept || typeof concept !== "string") {
+    if (!concept || typeof concept !== 'string') {
       return res.status(400).json({
         ok: false,
-        error: "Missing 'concept' string in request body"
+        error: "Missing 'concept' string in request body",
       });
     }
 
-    // SELECT MODEL (we will upgrade later to best image model)
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",   // temporary starter model
-    });
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: 'Server misconfigured: GEMINI_API_KEY is missing',
+      });
+    }
 
-    // The final prompt keeps the character consistent
-    const prompt = `
-      Turn the THIRSTY CHAD mascot into the following version:
-      ${concept}
+    const trimmedConcept = concept.trim().slice(0, 200); // basic length safety
+    const fullPrompt = buildPrompt(trimmedConcept);
 
-      Style rules:
-      - Keep the same cartoon proportions
-      - Keep the heart sunglasses
-      - Keep the sweaty “thirsty degen” look
-      - Keep clean vector-style outlines
-      - Keep recognizable face shape
-      - No photorealism, clean toon style
-    `;
+    const imageDataUrl = await generateImageFromGemini(fullPrompt);
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const textOutput = response.text();
-
-    res.json({
+    return res.json({
       ok: true,
-      concept,
-      output: textOutput
+      image: imageDataUrl,
+      prompt: fullPrompt,
     });
-
   } catch (err) {
-    console.error("Gemini error:", err);
-    res.status(500).json({
+    console.error('PFP error:', err);
+    return res.status(500).json({
       ok: false,
-      error: "Gemini failed",
-      details: err.message
+      error: 'Failed to generate PFP image',
+      details: err.message || String(err),
     });
   }
 });
 
-// ---------------------------
+// start server
 app.listen(PORT, () => {
   console.log(`Thirst PFP backend running on port ${PORT}`);
 });
