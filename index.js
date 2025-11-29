@@ -8,7 +8,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// 🔑 Use your new environment key name
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Health check
@@ -28,9 +27,9 @@ app.post("/pfp", async (req, res) => {
       });
     }
 
-    // ⭐ Correct model name for 2025 API
+    // ⭐ CORRECT MODEL NAME FOR 2025 API
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-001"
+      model: "gemini-1.5-flash"
     });
 
     const result = await model.generateContent(concept);
