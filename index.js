@@ -8,46 +8,45 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Use your correct Render environment variable
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_PFP_KEY);
+// Force API to use the STABLE v1 endpoint instead of v1beta
+const genAI = new GoogleGenerativeAI({
+  apiKey: process.env.GEMINI_PFP_KEY,
+  baseUrl: "https://generativelanguage.googleapis.com/v1"
+});
 
-// Health check
+// Health
 app.get("/", (req, res) => {
   res.json({ ok: true, service: "thirst-pfp-backend" });
 });
 
-// PFP generation endpoint
+// PFP route
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
 
     if (!concept) {
-      return res.status(400).json({
-        ok: false,
-        error: "Missing 'concept' field",
-      });
+      return res.status(400).json({ ok: false, error: "Missing concept" });
     }
 
-    // IMPORTANT: correct model name for stable API
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash"
     });
 
     const result = await model.generateContent(concept);
-    const text = result.response.text();
+    const output = result.response.text();
 
     res.json({
       ok: true,
       prompt: concept,
-      output: text
+      output
     });
 
-  } catch (error) {
-    console.error("Gemini error:", error);
+  } catch (err) {
+    console.error("Gemini Error:", err);
     res.status(500).json({
       ok: false,
       error: "Failed to generate PFP image",
-      details: String(error)
+      details: String(err)
     });
   }
 });
