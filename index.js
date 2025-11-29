@@ -1,56 +1,54 @@
-const express = require("express");
-const cors = require("cors");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+import express from "express";
+import cors from "cors";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Health check
-app.get("/", (req, res) => {
-  res.json({ ok: true, service: "thirst-pfp-backend" });
-});
-
-// PFP generation endpoint
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
 
-    if (!concept) {
-      return res.status(400).json({
-        ok: false,
-        error: "Missing 'concept'"
-      });
-    }
-
-    // ⭐ CORRECT MODEL NAME FOR 2025 API
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash"
+      model: "gemini-3.0-pro"  // <<< FIXED MODEL
     });
 
-    const result = await model.generateContent(concept);
-    const text = result.response.text();
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Generate a PFP image based on this concept: ${concept}. 
+              Return ONLY base64 PNG output.`
+            }
+          ]
+        }
+      ]
+    });
+
+    const response = await result.response;
+    const base64 = response.candidates[0].content.parts[0].inlineData.data;
 
     res.json({
       ok: true,
-      prompt: concept,
-      output: text
+      image: `data:image/png;base64,${base64}`,
     });
-
   } catch (err) {
-    console.error("Gemini error:", err);
     res.status(500).json({
       ok: false,
       error: "Failed to generate PFP",
-      details: String(err)
+      details: err.message || err.toString(),
     });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Thirst PFP backend running on port ${PORT}`);
+app.get("/", (req, res) => {
+  res.send("PFP API is running.");
 });
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server running on port " + PORT));
