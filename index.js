@@ -8,64 +8,48 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Load API key from Render environment
+// ✅ USE THIS — matches your Render environment variable EXACTLY
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_PFP_KEY);
 
-// Health check
-app.get("/health", (req, res) => {
+// Simple health check
+app.get("/", (req, res) => {
   res.json({ ok: true, service: "thirst-pfp-backend" });
 });
 
-// PFP Generator Endpoint
+// Generate PFP endpoint
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
 
-    if (!concept || typeof concept !== "string") {
+    if (!concept) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid concept. Must be a text string."
+        error: "Missing 'concept' field",
       });
     }
 
+    // Use a valid Gemini image model
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-001"  // <---- WORKING MODEL
+      model: "gemini-1.5-flash-latest"
     });
 
-    const prompt = `
-You are generating a funny cartoon PFP of "Thirsty Chad".
-Everything must stay in the *exact same art style* as the Thirsty Chad image provided.
+    const result = await model.generateContent(concept);
 
-Draw Thirsty Chad as: ${concept}.
-Centered composition, clean outline, bold cartoon shading, heart-shaped sunglasses, sweaty, chain, same proportions.
-
-Output only a finished image.
-`;
-
-    const result = await model.generateContent(prompt);
-
-    const imageResponse = result.response.candidates?.[0]?.content?.parts?.[0];
-
-    if (!imageResponse || !imageResponse.inlineData) {
-      return res.status(500).json({
-        ok: false,
-        error: "Gemini did not return an image."
-      });
-    }
-
-    const { data, mimeType } = imageResponse.inlineData;
+    // Extract output text
+    const text = result.response.text();
 
     res.json({
       ok: true,
-      mimeType,
-      imageBase64: data
+      prompt: concept,
+      output: text
     });
+  } catch (error) {
+    console.error("Gemini error:", error);
 
-  } catch (err) {
     res.status(500).json({
       ok: false,
       error: "Failed to generate PFP image",
-      details: err.message
+      details: String(error)
     });
   }
 });
