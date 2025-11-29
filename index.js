@@ -16,46 +16,38 @@ app.get('/health', (req, res) => {
 });
 
 // ---------------------------
-// BUILD PROMPT
+// PROMPT BUILDER
 // ---------------------------
 function buildPrompt(concept) {
   return `
-You are generating a Thirsty Chad profile picture for the $THIRST universe.
+You generate Thirsty Chad PFP art in a consistent neon comic style.
 
-Style rules (MUST follow every time):
-- Bust-up portrait, centered in frame
-- Large rounded cartoon head, shoulders visible
-- Thick clean linework, bold outlines
-- Neon comic style with saturated colors (cyan, magenta, orange, purple)
-- Heart-shaped sunglasses and chunky gold Bitcoin medallion chain by default
-- Clean gradient or glow background, not a detailed scene
-- Confident, slightly degen meme expression
-- Keep face shape, proportions, and pose consistent across all images
+STYLE RULES:
+- Bust-up portrait
+- Large cartoon head, clean thick outlines
+- Neon glow palette (cyan, magenta, purple, orange)
+- Heart glasses + gold Bitcoin chain by default
+- Smooth gradient background
+- Confident, degen meme energy
 
-Now transform this base Thirsty Chad into the following concept, changing ONLY outfit, accessories, hairstyle, colors, and theme, while keeping the same head/body proportions and style:
+Transform the base Chad into:
 
 "${concept}"
 
-IMPORTANT OUTPUT INSTRUCTIONS:
-- Generate a high-quality PNG image of this character.
-- Then encode the PNG as base64.
-- Respond with ONLY a single line that is a valid data URL in this exact format:
-  data:image/png;base64,AAAA...
-- Do NOT include any extra text, markdown, JSON, backticks, or explanation.
-Just output the data URL string.
+OUTPUT RULES:
+Return ONLY a data URL:
+data:image/png;base64,AAAA...
+
+Do NOT include text, markdown, backticks, or explanation.
 `;
 }
 
 // ---------------------------
-// CALL GEMINI TEXT ENDPOINT (IMAGE AS BASE64 TEXT)
+// GEMINI GENERATION
 // ---------------------------
 async function generateImageDataUrl(prompt) {
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not set on the server');
-  }
-
   const url =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' +
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' +
     GEMINI_API_KEY;
 
   const body = {
@@ -78,21 +70,16 @@ async function generateImageDataUrl(prompt) {
   });
 
   if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error('Gemini HTTP ' + resp.status + ': ' + errText);
+    const err = await resp.text();
+    throw new Error('Gemini HTTP ' + resp.status + ': ' + err);
   }
 
   const data = await resp.json();
-  const candidates = data.candidates || [];
-  if (!candidates.length) {
-    throw new Error('No candidates returned from Gemini');
-  }
-
-  const parts = (candidates[0].content && candidates[0].content.parts) || [];
-  const text = parts.map((p) => p.text || '').join('').trim();
+  const text =
+    data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('').trim() || '';
 
   if (!text.startsWith('data:image')) {
-    throw new Error('Model did not return a data URL. Got: ' + text.slice(0, 80));
+    throw new Error('Model did not return data URL. Got: ' + text.slice(0, 80));
   }
 
   return text;
@@ -108,19 +95,17 @@ app.post('/pfp', async (req, res) => {
     if (!concept || typeof concept !== 'string') {
       return res.status(400).json({
         ok: false,
-        error: "Missing 'concept' string in JSON body",
+        error: "Missing 'concept' string in request body",
       });
     }
 
-    const trimmedConcept = concept.trim().slice(0, 200);
-    const fullPrompt = buildPrompt(trimmedConcept);
+    const prompt = buildPrompt(concept.trim());
+    const imageData = await generateImageDataUrl(prompt);
 
-    const imageDataUrl = await generateImageDataUrl(fullPrompt);
-
-    return res.json({
+    res.json({
       ok: true,
-      concept: trimmedConcept,
-      image: imageDataUrl,
+      concept: concept.trim(),
+      image: imageData,
     });
   } catch (err) {
     console.error('PFP ERROR:', err);
