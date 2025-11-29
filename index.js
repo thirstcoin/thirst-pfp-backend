@@ -3,38 +3,72 @@ const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 app.use(cors());
 app.use(express.json());
-
-// Load Gemini API key
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // ---------------------------
 // HEALTH CHECK
 // ---------------------------
 app.get('/health', (req, res) => {
-  res.json({ ok: true, service: "thirst-pfp-backend" });
+  res.json({ ok: true, service: 'thirst-pfp-backend' });
 });
 
 // ---------------------------
-// CALL GEMINI IMAGE ENDPOINT
+// BUILD PROMPT
 // ---------------------------
-async function generateImageFromGemini(prompt) {
+function buildPrompt(concept) {
+  return `
+You are generating a Thirsty Chad profile picture for the $THIRST universe.
+
+Style rules (MUST follow every time):
+- Bust-up portrait, centered in frame
+- Large rounded cartoon head, shoulders visible
+- Thick clean linework, bold outlines
+- Neon comic style with saturated colors (cyan, magenta, orange, purple)
+- Heart-shaped sunglasses and chunky gold Bitcoin medallion chain by default
+- Clean gradient or glow background, not a detailed scene
+- Confident, slightly degen meme expression
+- Keep face shape, proportions, and pose consistent across all images
+
+Now transform this base Thirsty Chad into the following concept, changing ONLY outfit, accessories, hairstyle, colors, and theme, while keeping the same head/body proportions and style:
+
+"${concept}"
+
+IMPORTANT OUTPUT INSTRUCTIONS:
+- Generate a high-quality PNG image of this character.
+- Then encode the PNG as base64.
+- Respond with ONLY a single line that is a valid data URL in this exact format:
+  data:image/png;base64,AAAA...
+- Do NOT include any extra text, markdown, JSON, backticks, or explanation.
+Just output the data URL string.
+`;
+}
+
+// ---------------------------
+// CALL GEMINI TEXT ENDPOINT (IMAGE AS BASE64 TEXT)
+// ---------------------------
+async function generateImageDataUrl(prompt) {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not set on the server');
   }
 
   const url =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateImages?key=' +
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' +
     GEMINI_API_KEY;
 
   const body = {
-    prompt: { text: prompt },
-    image_generation_config: {
-      number_of_images: 1,
-      aspect_ratio: "1:1"
-    }
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.9,
+      maxOutputTokens: 2048,
+    },
   };
 
   const resp = await fetch(url, {
@@ -44,62 +78,56 @@ async function generateImageFromGemini(prompt) {
   });
 
   if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error('Gemini HTTP ' + resp.status + ': ' + err);
+    const errText = await resp.text();
+    throw new Error('Gemini HTTP ' + resp.status + ': ' + errText);
   }
 
   const data = await resp.json();
-
-  if (!data.images || !data.images.length) {
-    throw new Error('No images returned from Gemini');
+  const candidates = data.candidates || [];
+  if (!candidates.length) {
+    throw new Error('No candidates returned from Gemini');
   }
 
-  const base64 = data.images[0].data;
-  return `data:image/png;base64,${base64}`;
+  const parts = (candidates[0].content && candidates[0].content.parts) || [];
+  const text = parts.map((p) => p.text || '').join('').trim();
+
+  if (!text.startsWith('data:image')) {
+    throw new Error('Model did not return a data URL. Got: ' + text.slice(0, 80));
+  }
+
+  return text;
 }
 
 // ---------------------------
-// PFP GENERATION ENDPOINT
+// PFP ENDPOINT
 // ---------------------------
 app.post('/pfp', async (req, res) => {
   try {
     const { concept } = req.body || {};
 
-    if (!concept || typeof concept !== "string") {
+    if (!concept || typeof concept !== 'string') {
       return res.status(400).json({
         ok: false,
-        error: "Missing 'concept' string in JSON body"
+        error: "Missing 'concept' string in JSON body",
       });
     }
 
-    // Build the character prompt
-    const finalPrompt = `
-      Turn the THIRSTY CHAD mascot into this version:
-      ${concept}
+    const trimmedConcept = concept.trim().slice(0, 200);
+    const fullPrompt = buildPrompt(trimmedConcept);
 
-      Style rules:
-      - Keep the same cartoon proportions every time
-      - Keep heart-shaped sunglasses
-      - Keep sweat drops / “thirsty degen” expression
-      - Clean vector-style outlines
-      - Bold colors, meme energy
-      - Consistent face structure for recognizability
-    `;
+    const imageDataUrl = await generateImageDataUrl(fullPrompt);
 
-    const imageDataUrl = await generateImageFromGemini(finalPrompt);
-
-    res.json({
+    return res.json({
       ok: true,
-      concept,
-      image: imageDataUrl
+      concept: trimmedConcept,
+      image: imageDataUrl,
     });
-
   } catch (err) {
-    console.error("PFP ERROR:", err);
-    res.status(500).json({
+    console.error('PFP ERROR:', err);
+    return res.status(500).json({
       ok: false,
-      error: "Failed to generate PFP image",
-      details: err.message
+      error: 'Failed to generate PFP image',
+      details: err.message || String(err),
     });
   }
 });
