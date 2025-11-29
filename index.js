@@ -8,15 +8,15 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// ✅ USE THIS — matches your Render environment variable EXACTLY
+// Use your correct Render environment variable
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_PFP_KEY);
 
-// Simple health check
+// Health check
 app.get("/", (req, res) => {
   res.json({ ok: true, service: "thirst-pfp-backend" });
 });
 
-// Generate PFP endpoint
+// PFP generation endpoint
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
@@ -28,14 +28,12 @@ app.post("/pfp", async (req, res) => {
       });
     }
 
-    // Use a valid Gemini image model
+    // IMPORTANT: correct model name for stable API
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash-latest"
+      model: "gemini-1.5-flash"
     });
 
     const result = await model.generateContent(concept);
-
-    // Extract output text
     const text = result.response.text();
 
     res.json({
@@ -43,9 +41,9 @@ app.post("/pfp", async (req, res) => {
       prompt: concept,
       output: text
     });
+
   } catch (error) {
     console.error("Gemini error:", error);
-
     res.status(500).json({
       ok: false,
       error: "Failed to generate PFP image",
