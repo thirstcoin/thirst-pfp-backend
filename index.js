@@ -1,68 +1,64 @@
-const express = require('express');
-const cors = require('cors');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const express = require("express");
+const cors = require("cors");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 app.use(express.json());
 
-// Gemini client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash"
+const PORT = process.env.PORT || 3000;
+
+// Load API key from Render environment
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_PFP_KEY);
+
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ ok: true, service: "thirst-pfp-backend" });
 });
 
-// Health
-app.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'thirst-pfp-backend' });
-});
-
-// PFP Generation
-app.post('/pfp', async (req, res) => {
+// PFP Generator Endpoint
+app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
 
-    if (!concept || typeof concept !== 'string') {
+    if (!concept || typeof concept !== "string") {
       return res.status(400).json({
         ok: false,
-        error: "Missing or invalid 'concept' field"
+        error: "Invalid concept. Must be a text string."
       });
     }
 
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash-001"  // <---- WORKING MODEL
+    });
+
     const prompt = `
-      Create a clean, solid-color-background **PFP portrait only** 
-      of the cartoon character "Thirsty Chad".
+You are generating a funny cartoon PFP of "Thirsty Chad".
+Everything must stay in the *exact same art style* as the Thirsty Chad image provided.
 
-      Always:
-      - Maintain the same face proportions and style
-      - Keep heart-shaped pink sunglasses
-      - Keep short brown hair
-      - Make him hydrated and sweaty (the signature look)
-      - NO body, only head + neck area
-      - Simple PFP background (blue, teal, purple, or gradient)
+Draw Thirsty Chad as: ${concept}.
+Centered composition, clean outline, bold cartoon shading, heart-shaped sunglasses, sweaty, chain, same proportions.
 
-      Transform him into: ${concept}
-
-      Return ONLY a PNG image. 
-    `;
+Output only a finished image.
+`;
 
     const result = await model.generateContent(prompt);
 
-    const imageData = result.response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    const imageResponse = result.response.candidates?.[0]?.content?.parts?.[0];
 
-    if (!imageData) {
+    if (!imageResponse || !imageResponse.inlineData) {
       return res.status(500).json({
         ok: false,
-        error: "Gemini returned no image data"
+        error: "Gemini did not return an image."
       });
     }
 
+    const { data, mimeType } = imageResponse.inlineData;
+
     res.json({
       ok: true,
-      image: imageData.data,
-      mimeType: imageData.mimeType
+      mimeType,
+      imageBase64: data
     });
 
   } catch (err) {
