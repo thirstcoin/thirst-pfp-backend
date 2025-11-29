@@ -1,61 +1,66 @@
 import express from "express";
 import cors from "cors";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Your Nano Banana API Key
+const NANO_KEY = process.env.NANO_API_KEY;
 
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
 
-    // ⭐ FREE TIER MODEL
-    const model = genAI.getGenerativeModel({
-      model: "nano-banana-ml"
+    if (!concept) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing concept",
+        details: "Please include a concept in your request body."
+      });
+    }
+
+    // Nano Banana API Endpoint
+    const response = await fetch("https://api.nanobanana.ai/v1/images/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": NANO_KEY
+      },
+      body: JSON.stringify({
+        prompt: concept,
+        size: "1024x1024",
+        output_format: "base64"
+      })
     });
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `
-Generate a clean, high-quality PFP image as a square PNG based on this concept:
+    const data = await response.json();
 
-"${concept}"
-
-Return ONLY the base64 encoded PNG (inlineData).
-              `
-            }
-          ]
-        }
-      ]
-    });
-
-    const response = await result.response;
-    const base64 = response.candidates[0].content.parts[0].inlineData.data;
+    if (!response.ok || !data.image) {
+      return res.status(500).json({
+        ok: false,
+        error: "Nano Banana API Error",
+        details: JSON.stringify(data)
+      });
+    }
 
     return res.json({
       ok: true,
-      image: `data:image/png;base64,${base64}`,
+      image: `data:image/png;base64,${data.image}`
     });
 
   } catch (err) {
-    console.error("PFP ERROR:", err);
     return res.status(500).json({
       ok: false,
       error: "Failed to generate PFP",
-      details: err.message || err.toString(),
+      details: err.message || String(err)
     });
   }
 });
 
 app.get("/", (req, res) => {
-  res.send("PFP API is running.");
+  res.send("PFP API running with Nano Banana.");
 });
 
 const PORT = process.env.PORT || 3000;
