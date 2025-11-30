@@ -1,13 +1,13 @@
 // index.js
 import express from "express";
 import cors from "cors";
-import { GoogleAI } from "google-genai"; // NEW SDK
+import { GoogleAI } from "google-genai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Use your paid key (same as Playground)
+// Gemini client using your paid key
 const client = new GoogleAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
@@ -26,8 +26,9 @@ app.post("/pfp", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing concept" });
     }
 
-    console.log("Using model: gemini-3-pro-image-preview");
+    console.log("PFP request using Gemini 3…");
 
+    // Gemini 3 needs responseMimeType instead of modalities
     const result = await client.models.generateContent({
       model: "gemini-3-pro-image-preview",
       contents: [
@@ -36,41 +37,42 @@ app.post("/pfp", async (req, res) => {
           parts: [
             {
               text: `
-Create a Thirsty Chad PFP based on this idea:
+Generate a square PNG profile picture of the Thirsty Chad mascot.
 
-"${concept}"
+Concept: "${concept}"
 
-Style rules:
-- neon degen crypto vibe
-- clean PFP layout 
-- centered character
-- sharp digital art
-- glowing aqua-magenta gradients
-Return a **PNG image** ONLY.
-              `,
+Style:
+- neon crypto degen vibes
+- vinyl-toy proportions
+- bright aqua-magenta glow
+- centered PFP composition
+Return ONLY an image (PNG).`,
             },
           ],
         },
       ],
-      config: {
-        responseModalities: ["IMAGE"], // REQUIRED
-        imageConfig: { imageSize: "1K" }, // 1024x1024
+      generationConfig: {
+        responseMimeType: "image/png", // ⭐ REQUIRED FOR IMAGES
       },
     });
 
-    const part =
-      result?.candidates?.[0]?.content?.parts?.find(
-        (p) => p.inlineData?.data
-      );
+    // Extract image
+    const part = result?.candidates?.[0]?.content?.parts?.find(
+      (p) => p.inlineData?.data
+    );
 
-    if (!part) throw new Error("Model returned no image");
+    if (!part) throw new Error("Gemini 3 returned no image data.");
 
     const base64 = part.inlineData.data;
 
-    return res.json({ ok: true, image: `data:image/png;base64,${base64}` });
+    res.json({
+      ok: true,
+      image: `data:image/png;base64,${base64}`,
+    });
+
   } catch (err) {
     console.error("PFP /pfp error:", err);
-    return res.status(500).json({
+    res.status(500).json({
       ok: false,
       error: err.message || "Image generation failed",
     });
@@ -79,4 +81,6 @@ Return a **PNG image** ONLY.
 
 // Server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("PFP backend running on", PORT));
+app.listen(PORT, () =>
+  console.log("PFP backend running on port", PORT)
+);
