@@ -1,5 +1,5 @@
-// index.js – PFP backend (root file for Render)
-// package.json should have:  "type": "module"
+// index.js - Thirst PFP Generator Backend
+// Must have `"type": "module"` in package.json
 
 import express from "express";
 import cors from "cors";
@@ -9,21 +9,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Uses GEMINI_API_KEY from Render environment
+// Use your paid image-capable model
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Health check
+// Health route
 app.get("/health", (req, res) => {
   res.json({ ok: true, status: "PFP backend alive" });
 });
 
-/**
- * POST /pfp
- * body: { concept: string }
- * returns:
- *  - success: { ok: true, image: "data:image/png;base64,..." }
- *  - error:   { ok: false, error, details }
- */
+// Generate PFP
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
@@ -32,29 +28,28 @@ app.post("/pfp", async (req, res) => {
       return res.status(400).json({
         ok: false,
         error: "Prompt required",
-        details: "Please describe your Chad so we can generate a PFP.",
       });
     }
 
     console.log("PFP /pfp request concept:", concept);
+    console.log("Using model:", IMAGE_MODEL);
 
-    // Image-capable Gemini model (if account/tier supports image output)
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: IMAGE_MODEL,
     });
 
     const promptText = `
-Create a square avatar / PFP of the Thirsty Chad mascot as described here:
+Create a square Thirsty Chad mascot avatar based on this concept:
 
 "${concept}"
 
-Style:
-- clean, high-quality digital art
-- bold colors, neon degen crypto vibes
-- centered character, full head and shoulders
-- simple gradient background that works as a PFP
-Return ONLY a single PNG image.
-    `.trim();
+Art direction:
+- vinyl toy realism
+- neon gradients
+- bold crypto-degen energy
+- centered PFP composition
+Return ONE PNG image ONLY.
+`;
 
     const result = await model.generateContent({
       contents: [
@@ -64,68 +59,34 @@ Return ONLY a single PNG image.
         },
       ],
       generationConfig: {
-        // Ask Gemini to directly return PNG bytes
+        responseModalities: ["IMAGE"],
         responseMimeType: "image/png",
       },
     });
 
     const response = result.response;
+    const candidate = response?.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
 
-    const imagePart =
-      response?.candidates?.[0]?.content?.parts?.find(
-        (part) => part.inlineData && part.inlineData.data
-      ) || null;
+    const imagePart = parts.find(
+      (p) => p.inlineData && p.inlineData.data
+    );
 
     if (!imagePart) {
-      console.error("PFP /pfp error: Gemini response had no inlineData", {
-        responseJSON: JSON.stringify(response, null, 2000),
-      });
-      throw new Error(
-        "No image data returned from Gemini. (Project/tier may not support image/png responses.)"
-      );
-    }
-
-    const base64Data = imagePart.inlineData.data;
-
-    if (!base64Data || typeof base64Data !== "string") {
-      console.error("PFP /pfp error: inlineData.data missing or not a string");
+      console.error("❌ No image data returned:", JSON.stringify(response, null, 2));
       throw new Error("No image data returned from Gemini.");
     }
 
-    const dataUrl = `data:image/png;base64,${base64Data}`;
+    const dataUrl = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
 
-    return res.json({
-      ok: true,
-      image: dataUrl,
-    });
+    return res.json({ ok: true, image: dataUrl });
+
   } catch (err) {
-    // Log the full error object so Render logs show everything
-    console.error("PFP /pfp error:", {
-      message: err?.message,
-      name: err?.name,
-      status: err?.status,
-      statusText: err?.statusText,
-      errorDetails: err?.errorDetails,
-      stack: err?.stack,
-    });
-
-    // If this is the "allowed mimetypes" 400 from Gemini, surface that clearly
-    if (err?.status === 400) {
-      return res.status(400).json({
-        ok: false,
-        error: "Gemini request rejected (400)",
-        details:
-          err?.message ||
-          "Gemini did not accept this request. Your project tier may not support image/png responses – allowed types are text/json only.",
-      });
-    }
-
+    console.error("PFP /pfp error:", err);
     return res.status(500).json({
       ok: false,
       error: "PFP generation failed",
-      details:
-        err?.message ||
-        "Unexpected error while talking to Gemini. Please try again.",
+      details: err?.message,
     });
   }
 });
