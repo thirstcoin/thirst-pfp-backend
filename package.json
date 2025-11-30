@@ -4,7 +4,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "google-genai": "^0.3.0"
+    "@google/generative-ai": "^0.11.4"
   },
   "scripts": {
     "start": "node index.js"
