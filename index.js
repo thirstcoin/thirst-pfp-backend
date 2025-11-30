@@ -1,31 +1,26 @@
-// index.js
 import express from "express";
 import cors from "cors";
-import { GoogleAI } from "@google/generative-ai";
+import { GoogleAI } from "google-genai";   // ✅ correct module
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Google client
+// Gemini client
 const client = new GoogleAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-// Health route
-app.get("/health", (req, res) => {
-  res.json({ ok: true, status: "pfp backend running" });
-});
+// Health
+app.get("/health", (req, res) => res.json({ ok: true }));
 
-// PFP generation
+// PFP generation route
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
-    if (!concept) {
-      return res.status(400).json({ ok: false, error: "Missing concept" });
-    }
+    if (!concept) return res.status(400).json({ ok: false, error: "Missing concept" });
 
-    console.log("🔥 Using model: gemini-3-pro-image-preview");
+    console.log("Using model: gemini-3-pro-image-preview");
 
     const result = await client.models.generateContent({
       model: "gemini-3-pro-image-preview",
@@ -35,44 +30,45 @@ app.post("/pfp", async (req, res) => {
           parts: [
             {
               text: `
-Create a Thirsty Chad PFP using this idea:
+Generate a Thirsty Chad PFP based on:
 
 "${concept}"
 
-Style:
-- neon crypto energy
-- glowing gradients
-- sharp face + clean PFP framing
+Rules:
+- neon degen crypto vibe
+- centered PFP
+- aqua-magenta glow
+- sharp character art
+
 Return ONLY a PNG image.
-            `,
+              `,
             },
           ],
         },
       ],
-      output: "image",   // REQUIRED for Gemini-3 image models
+      generationConfig: {
+        responseModalities: ["IMAGE"],
+        imageConfig: { imageSize: "1K" },
+      },
     });
 
-    // Extract the image
-    const part = result.candidates?.[0]?.content?.parts?.find(
+    const imgPart = result?.candidates?.[0]?.content?.parts?.find(
       (p) => p.inlineData?.data
     );
 
-    if (!part) {
-      throw new Error("Model did not return an image.");
-    }
+    if (!imgPart) throw new Error("No image returned");
 
-    const base64 = part.inlineData.data;
+    const base64 = imgPart.inlineData.data;
 
-    res.json({
+    return res.json({
       ok: true,
-      image: `data:${part.inlineData.mimeType};base64,${base64}`,
+      image: `data:image/png;base64,${base64}`
     });
   } catch (err) {
-    console.error("❌ PFP /pfp error:", err);
+    console.error("PFP ERROR:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// Start
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("🔥 PFP backend live on", PORT));
+app.listen(PORT, () => console.log("PFP backend running on", PORT));
