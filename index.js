@@ -1,4 +1,4 @@
-// src/index.js (or index.mjs if that’s what Render uses)
+// src/index.js
 // Make sure package.json has: "type": "module"
 
 import express from "express";
@@ -36,12 +36,12 @@ app.post("/pfp", async (req, res) => {
 
     console.log("PFP /pfp request concept:", concept);
 
-    // Use a paid, image-capable Gemini model
+    // Image-capable Gemini model (paid key, Tier 1)
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
     });
 
-    // Single prompt string we’ll send to Gemini
+    // Prompt we send to Gemini
     const promptText = `
 Create a square avatar / PFP of the Thirsty Chad mascot as described here:
 
@@ -52,9 +52,10 @@ Style:
 - bold colors, neon degen crypto vibes
 - centered character, full head and shoulders
 - simple gradient background that works as a PFP
-Return ONLY a single PNG image.
+Return a single PNG-style image, not text.
 `;
 
+    // NOTE: do NOT set responseMimeType to "image/png" – this causes 400 errors
     const result = await model.generateContent({
       contents: [
         {
@@ -62,36 +63,37 @@ Return ONLY a single PNG image.
           parts: [{ text: promptText }],
         },
       ],
-      generationConfig: {
-        // Tell Gemini we want an actual image back
-        responseMimeType: "image/png",
-      },
+      // No generationConfig.responseMimeType here
     });
 
-    // 👇 IMPORTANT: with the official Node SDK the payload is under result.response
     const response = result.response;
 
-    // Find the image part
+    // Try to find an image part (inlineData) in the response
     const imagePart =
       response?.candidates?.[0]?.content?.parts?.find(
         (part) => part.inlineData && part.inlineData.data
       ) || null;
 
     if (!imagePart) {
-      console.error("PFP /pfp error: Gemini response had no inlineData", {
-        responseJSON: JSON.stringify(response, null, 2).slice(0, 2000), // trimmed
-      });
+      console.error("PFP /pfp error: Gemini response had no inlineData");
+      console.error(
+        "Gemini raw response (trimmed):",
+        JSON.stringify(response, null, 2).slice(0, 2000)
+      );
+
       throw new Error("No image data returned from Gemini.");
     }
 
     const base64Data = imagePart.inlineData.data;
 
     if (!base64Data || typeof base64Data !== "string") {
-      console.error("PFP /pfp error: inlineData.data missing or not a string");
+      console.error(
+        "PFP /pfp error: inlineData.data missing or not a string:",
+        typeof base64Data
+      );
       throw new Error("No image data returned from Gemini.");
     }
 
-    // Send back as Data URL the front-end can drop straight into an <img src="...">
     const dataUrl = `data:image/png;base64,${base64Data}`;
 
     return res.json({
