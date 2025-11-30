@@ -1,16 +1,14 @@
 // index.js
 import express from "express";
 import cors from "cors";
-import { GoogleAI } from "google-genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Gemini client using your paid key
-const client = new GoogleAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+// Gemini client
+const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Health route
 app.get("/health", (req, res) => {
@@ -26,11 +24,13 @@ app.post("/pfp", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing concept" });
     }
 
-    console.log("PFP request using Gemini 3…");
+    console.log("Using model: gemini-3-pro-image-preview");
 
-    // Gemini 3 needs responseMimeType instead of modalities
-    const result = await client.models.generateContent({
+    const model = client.getGenerativeModel({
       model: "gemini-3-pro-image-preview",
+    });
+
+    const result = await model.generateContent({
       contents: [
         {
           role: "user",
@@ -43,25 +43,26 @@ Concept: "${concept}"
 
 Style:
 - neon crypto degen vibes
-- vinyl-toy proportions
+- vinyl toy proportions
 - bright aqua-magenta glow
-- centered PFP composition
-Return ONLY an image (PNG).`,
+- centered composition
+Return ONLY a PNG image.
+              `,
             },
           ],
         },
       ],
       generationConfig: {
-        responseMimeType: "image/png", // ⭐ REQUIRED FOR IMAGES
-      },
+        responseMimeType: "image/png"
+      }
     });
 
-    // Extract image
-    const part = result?.candidates?.[0]?.content?.parts?.find(
-      (p) => p.inlineData?.data
-    );
+    const part =
+      result?.response?.candidates?.[0]?.content?.parts?.find(
+        (p) => p.inlineData?.data
+      );
 
-    if (!part) throw new Error("Gemini 3 returned no image data.");
+    if (!part) throw new Error("Gemini returned no image data.");
 
     const base64 = part.inlineData.data;
 
@@ -81,6 +82,4 @@ Return ONLY an image (PNG).`,
 
 // Server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log("PFP backend running on port", PORT)
-);
+app.listen(PORT, () => console.log("PFP backend running on", PORT));
