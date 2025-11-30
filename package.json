@@ -1,12 +1,14 @@
 {
   "name": "thirst-pfp-backend",
+  "version": "1.0.0",
   "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "@google/generative-ai": "^0.11.4"
-  },
-  "scripts": {
-    "start": "node index.js"
+    "@google/generative-ai": "^0.11.0"
   }
 }
