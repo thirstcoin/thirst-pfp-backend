@@ -8,6 +8,7 @@ app.use(cors());
 app.use(express.json());
 
 // Correct client
+// Make sure your GEMINI_API_KEY is available in your environment variables!
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Health route
@@ -24,10 +25,11 @@ app.post("/pfp", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing concept" });
     }
 
-    console.log("Using model: gemini-3.0-pro-vision");
+    // *** FIX: Changed to the dedicated image generation model ***
+    console.log("Using model: gemini-2.5-flash-image");
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.0-pro-vision"
+      model: "gemini-2.5-flash-image" // Dedicated Image Model
     });
 
     const result = await model.generateContent({
@@ -53,10 +55,13 @@ Return ONLY a PNG image.
         }
       ],
       generationConfig: {
-        responseMimeType: "image/png"
+        responseMimeType: "image/png",
+        // *** FIX: Added this crucial configuration for image models ***
+        responseModalities: ["IMAGE"] 
       }
     });
 
+    // Extract the base64 data from the response part
     const imageData = result.response.candidates[0].content.parts[0].inlineData.data;
 
     res.json({
