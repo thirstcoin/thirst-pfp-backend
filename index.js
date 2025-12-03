@@ -1,38 +1,35 @@
 // index.js
-import express from "express";
-import cors from "cors";
-// NOTE: Assuming you installed 'dotenv' and are using 'import 'dotenv/config';' for local testing.
-// Render handles environment variables, so the import isn't strictly necessary for deployment there,
-// but it's good practice if you test locally.
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// ... other imports and setup code ...
 
-// Correct client
-// Assumes GEMINI_API_KEY is set in Render's environment variables.
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// --- STEP 1: DEFINE THE REFERENCE IMAGE ---
+// **PASTE the Base64 string of your chosen image here.**
+// Replace the placeholder string below with the code you copied!
+const CHAD_PFP_BASE64 = "/9j/4AAQSKZJRgABAQ...[PASTE YOUR FULL STRING HERE]..."; 
 
-// Health route
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
+const createChadReferencePart = () => ({
+  inlineData: {
+    // *** ADJUSTED MIME TYPE TO MATCH CONVERTER OUTPUT ***
+    mimeType: "image/jpeg", 
+    data: CHAD_PFP_BASE64,
+  },
 });
 
-// ---- PFP GENERATION (FINAL CORRECTED ROUTE) ----
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// ... Health route ...
+
+// ---- PFP GENERATION (FINAL VERSION) ----
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
 
-    if (!concept) {
-      return res.status(400).json({ ok: false, error: "Missing concept" });
-    }
+    // ... concept validation ...
 
-    // Using the dedicated image generation model
-    console.log("Using model: gemini-2.5-flash-image");
+    console.log("Using model: gemini-2.5-flash-image with consistent identity");
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-image" 
+      model: "gemini-2.5-flash-image"
     });
 
     const result = await model.generateContent({
@@ -40,42 +37,43 @@ app.post("/pfp", async (req, res) => {
         {
           role: "user",
           parts: [
+            // 1. ADD THE REFERENCE IMAGE PART HERE
+            createChadReferencePart(), 
             {
               text: `
-Create a Thirsty Chad PFP based on:
+Use the attached image as the **IDENTITY ANCHOR** for the character. **DO NOT change the face, skin tone, hair style, or bust-up crop.**
+Your task is to create a new PFP where the character keeps all of their original features and the style, but his clothing, props, and theme are based on the user's input:
 
-"${concept}"
+User Input Concept: "${concept}"
 
-Style:
-- neon degen crypto vibe
+Style Constraints (Maintain the original PFP style):
+- bust-up character portrait
+- clean circular PFP layout
 - centered character
-- clean PFP layout
+- neon degen crypto vibe
 - aqua & magenta lighting
-Return ONLY a PNG image.
+- Return ONLY a PNG image.
 `
             }
           ]
         }
       ],
       generationConfig: {
-        // Removed the conflicting responseMimeType
-        // Crucial setting for getting the raw image data back
         responseModalities: ["IMAGE"] 
       }
     });
 
-    // Extract the base64 data from the response part
     const imageData = result.response.candidates[0].content.parts[0].inlineData.data;
 
     res.json({
       ok: true,
-      // Sending the base64 image data back to the client
+      // We will still tell the client it's a PNG for consistency, 
+      // but the input image data is JPEG. The model handles the conversion.
       image: "data:image/png;base64," + imageData
     });
 
   } catch (err) {
     console.error("PFP /pfp error:", err);
-    // Be careful not to expose the raw API key error in a production environment
     res.status(500).json({
       ok: false,
       error: err.message
@@ -83,6 +81,4 @@ Return ONLY a PNG image.
   }
 });
 
-// Server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("PFP backend running on", PORT));
+// ... Server start ...
