@@ -1,6 +1,9 @@
 // index.js
 import express from "express";
 import cors from "cors";
+// NOTE: Assuming you installed 'dotenv' and are using 'import 'dotenv/config';' for local testing.
+// Render handles environment variables, so the import isn't strictly necessary for deployment there,
+// but it's good practice if you test locally.
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
@@ -8,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 // Correct client
-// Make sure your GEMINI_API_KEY is available in your environment variables!
+// Assumes GEMINI_API_KEY is set in Render's environment variables.
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Health route
@@ -16,7 +19,7 @@ app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- PFP GENERATION ----
+// ---- PFP GENERATION (FINAL CORRECTED ROUTE) ----
 app.post("/pfp", async (req, res) => {
   try {
     const { concept } = req.body;
@@ -25,11 +28,11 @@ app.post("/pfp", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing concept" });
     }
 
-    // *** FIX: Changed to the dedicated image generation model ***
+    // Using the dedicated image generation model
     console.log("Using model: gemini-2.5-flash-image");
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-image" // Dedicated Image Model
+      model: "gemini-2.5-flash-image" 
     });
 
     const result = await model.generateContent({
@@ -55,8 +58,8 @@ Return ONLY a PNG image.
         }
       ],
       generationConfig: {
-        responseMimeType: "image/png",
-        // *** FIX: Added this crucial configuration for image models ***
+        // Removed the conflicting responseMimeType
+        // Crucial setting for getting the raw image data back
         responseModalities: ["IMAGE"] 
       }
     });
@@ -66,11 +69,13 @@ Return ONLY a PNG image.
 
     res.json({
       ok: true,
+      // Sending the base64 image data back to the client
       image: "data:image/png;base64," + imageData
     });
 
   } catch (err) {
     console.error("PFP /pfp error:", err);
+    // Be careful not to expose the raw API key error in a production environment
     res.status(500).json({
       ok: false,
       error: err.message
